@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "700062154047",
+    "project_id": "mastermind-1a14c",
+    "storage_bucket": "mastermind-1a14c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:700062154047:android:ed2054a4e64b2b610b678a",
+        "android_client_info": {
+          "package_name": "com.example.mastermind"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBIIhiXdBlzKkUNKvXrFobWj6SIbCAHacE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:700062154047:android:396ef688238388b40b678a",
+        "android_client_info": {
+          "package_name": "com.example.medconnect"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBIIhiXdBlzKkUNKvXrFobWj6SIbCAHacE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
