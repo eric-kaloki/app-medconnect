@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:agora_rtc_engine/agora_rtc_engine.dart';
-import 'package:dio/dio.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'dart:async';
 import 'package:medconnect/utils/config.dart';
 
 class VideoCallPage extends StatefulWidget {
@@ -13,192 +14,133 @@ class VideoCallPage extends StatefulWidget {
 }
 
 class _VideoCallPageState extends State<VideoCallPage> {
-  late final RtcEngine _engine;
-  int? _remoteUid;
-  bool _joined = false;
+  RTCPeerConnection? _peerConnection;
+  MediaStream? _localStream;
+  final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
+  final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
   bool _isMuted = false;
   bool _videoEnabled = true;
-  String? _token;
-  final Dio _dio = Dio();
 
   @override
   void initState() {
     super.initState();
-    initializeAgoraMobile();
+    print('Initializing VideoCallPage with roomId: ${widget.channelName}');
+    _initializeRenderers();
+    _initializeMediaStream();
+    _listenForSignalingMessages();
   }
 
-  Future<void> initializeAgoraMobile() async {
-    await fetchToken();
-    if (_token == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to fetch token.')),
-        );
-        Navigator.pop(context);
-      }
-      return;
-    }
-
-    try {
-      _engine = createAgoraRtcEngine();
-      await _engine.initialize(RtcEngineContext(appId: Config.appId));
-      await _engine.enableVideo();
-
-      _engine.registerEventHandler(
-        RtcEngineEventHandler(
-          onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
-            if (mounted) {
-              setState(() {
-                _joined = true;
-              });
-            }
-            debugPrint(
-                'Local user ${connection.localUid} joined channel ${connection.channelId}');
-          },
-          onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
-            if (mounted) {
-              setState(() {
-                _remoteUid = remoteUid;
-              });
-            }
-            debugPrint('Remote user $remoteUid joined channel');
-          },
-          onUserOffline: (RtcConnection connection, int remoteUid,
-              UserOfflineReasonType reason) {
-            if (mounted) {
-              setState(() {
-                _remoteUid = null;
-              });
-            }
-            debugPrint('Remote user $remoteUid left channel');
-          },
-          onError: (ErrorCodeType err, String msg) {
-            debugPrint('Error from Agora: $err, $msg');
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Agora Error: $err, $msg')),
-              );
-            }
-          },
-        ),
-      );
-
-      await _engine.joinChannel(
-        token: _token!,
-        channelId: widget.channelName,
-        uid: 0,
-        options: const ChannelMediaOptions(),
-      );
-    } catch (e) {
-      debugPrint("Error initializing Agora Mobile: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error initializing video call: $e')),
-        );
-        Navigator.pop(context);
-      }
-    }
+  Future<void> _initializeRenderers() async {
+    await _localRenderer.initialize();
+    await _remoteRenderer.initialize();
   }
 
-  Future<void> fetchToken() async {
-    try {
-      final url = '${Config.apiUrl}/rtc/${widget.channelName}/0';
-      debugPrint('Fetching token from: $url');
-      final response = await _dio.get(url);
-      if (response.statusCode == 200) {
-        setState(() {
-          _token = response.data['token'];
-        });
-        debugPrint('Token fetched successfully: $_token');
-      } else {
-        debugPrint('Failed to fetch token: ${response.statusCode}');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Failed to fetch token: ${response.statusCode}')),
-          );
-          Navigator.pop(context);
-        }
+  Future<void> _initializeMediaStream() async {
+    print('Initializing media stream for roomId: ${widget.channelName}');
+    _localStream = await navigator.mediaDevices.getUserMedia({
+      'audio': true,
+      'video': true,
+    });
+    _localRenderer.srcObject = _localStream;
+    await _createPeerConnection();
+  }
+
+  Future<void> _createPeerConnection() async {
+    final configuration = {
+      'iceServers': [
+         {'urls': 'stun:stun.l.google.com:19302'},
+      ]
+    };
+
+    _peerConnection = await createPeerConnection(configuration);
+
+    _peerConnection!.onIceCandidate = (candidate) {
+      print('Local ICE candidate generated: ${candidate.toMap()}');
+      FirebaseDatabase.instance.ref('signaling/${widget.channelName}/candidates').push().set(candidate.toMap());
+        };
+
+    _peerConnection!.onTrack = (event) {
+      if (event.track.kind == 'video') {
+        print('Remote video track received.');
+        _remoteRenderer.srcObject = event.streams[0];
+      } else if (event.track.kind == 'audio') {
+        print('Remote audio track received.');
       }
-    } on DioException catch (e) {
-      debugPrint('Dio error fetching token: ${e.message}');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Dio error: ${e.message}')),
-        );
-        Navigator.pop(context);
+    };
+
+    _localStream?.getTracks().forEach((track) {
+      print('Adding local track: ${track.kind}');
+      _peerConnection!.addTrack(track, _localStream!);
+    });
+
+    _sendOffer();
+  }
+
+  void _sendOffer() async {
+    final offer = await _peerConnection!.createOffer();
+    print('SDP offer created for roomId ${widget.channelName}: ${offer.sdp}');
+    await _peerConnection!.setLocalDescription(offer);
+    FirebaseDatabase.instance.ref('signaling/${widget.channelName}/offer').set({
+      'sdp': offer.sdp,
+      'type': offer.type,
+    });
+    print('SDP offer sent to Firebase for roomId: ${widget.channelName}');
+  }
+
+  void _listenForSignalingMessages() {
+    final signalingRef = FirebaseDatabase.instance.ref('signaling/${widget.channelName}');
+
+    signalingRef.child('answer').onValue.listen((event) {
+      final answer = event.snapshot.value as Map<dynamic, dynamic>?;
+      if (answer != null) {
+        print('SDP answer received for roomId ${widget.channelName}: ${answer['sdp']}');
+        _peerConnection!.setRemoteDescription(RTCSessionDescription(answer['sdp'], answer['type']));
       }
-    } catch (e) {
-      debugPrint('Error fetching token: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-        Navigator.pop(context);
+    });
+
+    signalingRef.child('candidates').onChildAdded.listen((event) {
+      final candidate = event.snapshot.value as Map<dynamic, dynamic>?;
+      if (candidate != null) {
+        print('Remote ICE candidate received for roomId ${widget.channelName}: $candidate');
+        _peerConnection!.addCandidate(RTCIceCandidate(candidate['candidate'], candidate['sdpMid'], candidate['sdpMLineIndex']));
       }
-    }
+    });
   }
 
   @override
   void dispose() {
-    _engine.leaveChannel();
-    _engine.release();
+    _localStream?.dispose();
+    _localRenderer.dispose();
+    _remoteRenderer.dispose();
+    _peerConnection?.close();
     super.dispose();
-  }
-
-  Widget _renderRemoteVideo() {
-    if (_remoteUid != null) {
-      return AgoraVideoView(
-        controller: VideoViewController.remote(
-          rtcEngine: _engine,
-          canvas: VideoCanvas(uid: _remoteUid),
-          connection: RtcConnection(channelId: widget.channelName),
-        ),
-      );
-    } else {
-      return const Center(
-        child: Text(
-          'Waiting for remote user to join...',
-          style: TextStyle(color: Colors.white, fontSize: 18),
-        ),
-      );
-    }
-  }
-
-  Widget _renderLocalPreview() {
-    if (_joined) {
-      return AgoraVideoView(
-        controller: VideoViewController(
-          rtcEngine: _engine,
-          canvas: const VideoCanvas(uid: 0),
-        ),
-      );
-    } else {
-      return const Center(child: CircularProgressIndicator());
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Agora Video Call')),
+      appBar: AppBar(title: const Text('WebRTC Video Call')),
       body: Stack(
         children: [
           Container(
             color: Colors.black,
-            child: Center(child: _renderRemoteVideo()),
-          ),
-          Positioned(
-            top: 20,
-            right: 20,
-            width: 120,
-            height: 160,
-            child: Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.white, width: 2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: _renderLocalPreview(),
+            child: Stack(
+              children: [
+                RTCVideoView(_remoteRenderer),
+                Positioned(
+                  top: 20,
+                  right: 20,
+                  width: 120,
+                  height: 160,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.white, width: 2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: RTCVideoView(_localRenderer),
+                  ),
+                ),
+              ],
             ),
           ),
           Positioned(
@@ -218,7 +160,9 @@ class _VideoCallPageState extends State<VideoCallPage> {
                     setState(() {
                       _isMuted = !_isMuted;
                     });
-                    _engine.muteLocalAudioStream(_isMuted);
+                    _localStream?.getAudioTracks().forEach((track) {
+                      track.enabled = !_isMuted;
+                    });
                   },
                 ),
                 FloatingActionButton(
@@ -238,7 +182,9 @@ class _VideoCallPageState extends State<VideoCallPage> {
                     setState(() {
                       _videoEnabled = !_videoEnabled;
                     });
-                    _engine.muteLocalVideoStream(!_videoEnabled);
+                    _localStream?.getVideoTracks().forEach((track) {
+                      track.enabled = _videoEnabled;
+                    });
                   },
                 ),
               ],

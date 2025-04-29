@@ -4,8 +4,6 @@ import 'package:medconnect/screens/Doctors/Appointment/appointment_card.dart'; /
 import 'package:medconnect/screens/Doctors/Appointment/canceled_appointment_card.dart';
 import 'package:medconnect/screens/Doctors/Appointment/completed_appointment_card.dart';
 import 'package:medconnect/providers/dio_provider.dart';
-import 'package:medconnect/screens/Patients/Appointment/choose_doctor_page.dart';
-import 'package:medconnect/utils/config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
@@ -170,17 +168,6 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
           textAlign: TextAlign.center,
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => const ChooseDoctorPage(),
-            ),
-          );
-        },
-        backgroundColor: Config.primaryColor,
-        child: const Icon(Icons.add),
-      ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : errorMessage.isNotEmpty
@@ -269,6 +256,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
                                 final patientName = schedule['patientName'] ?? 'Unknown';
                                 final doctorId = schedule['doctor_id'] ?? 'Unknown';
                                 final appointmentId = schedule['id'] ?? 'Unknown';
+                                final patientId = schedule['patient_id'] ?? 'Unknown';
 
                                 if (schedule['status'] == 'upcoming') {
                                   return AppointmentCard(
@@ -278,6 +266,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
                                     appointmentDate: appointmentDate,
                                     appointmentTime: appointmentTime,
                                     appointmentId: appointmentId,
+                                    patientId: patientId, // Pass the patient
                                   );
                                 } else if (schedule['status'] == 'complete') {
                                   return CompletedAppointmentCard(
@@ -285,6 +274,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
                                     appointmentId: appointmentId,
                                     patientName: patientName,
                                     appointmentTime: appointmentTime,
+                                    
                                   );
                                 } else if (schedule['status'] == 'cancel') {
                                   return CanceledAppointmentCard(

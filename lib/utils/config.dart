@@ -2,9 +2,22 @@
 import 'package:flutter/material.dart';
 
 class Config {
-  static String apiUrl = 'https://server-medconnect.onrender.com';
-  static String appId = "e6763f01e6344d418daa06bf25ad459f";
-  static String channelName = "test";
+  static String apiUrl = 'https://server-medconnect-kdeb.onrender.com';
+
+  static const String signalingServerAddress = 'https://server-medconnect-kdeb.onrender.com';
+  // static String appId = "e6763f01e6344d418daa06bf25ad459f";
+  // static String channelName = "test";
+
+  static const String turnServerUrl = 'turn:turn.googleapis.com';
+  static const String turnServerUsername = 'user';
+  static const String turnServerCredential = 'password';
+
+  static const List<Map<String, String>> stunServers = [
+    {'urls': 'stun:stun.l.google.com:19302'},
+    {'urls': 'stun:stun1.l.google.com:19302'},
+    {'urls': 'stun:stun2.l.google.com:19302'},
+    {'urls': 'stun:stun3.l.google.com:19302'},
+  ];
 
   static MediaQueryData? mediaQueryData;
   static double? screenWidth;

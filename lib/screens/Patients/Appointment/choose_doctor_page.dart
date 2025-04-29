@@ -117,6 +117,7 @@ class _ChooseDoctorPageState extends State<ChooseDoctorPage> {
       arguments: {
         'doctorId': doctor['id'], // Pass the doctor's ID
         'doctorName': doctor['name'], // Pass the doctor's name
+        'bookingType': 'new'
       },
     );
   }

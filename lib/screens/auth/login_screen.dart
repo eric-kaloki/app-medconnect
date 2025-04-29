@@ -170,7 +170,7 @@ class LoginScreenState extends State<LoginScreen> {
                                             'userRole', userRole);
                                       }
                                     if (userRole =='doctor'){
-                                      String doctorId = loginResponse['data']['role'];
+                                      String doctorId = loginResponse['data']['id'];
                                       await prefs.setString('doctorId', doctorId);
                                     }
 

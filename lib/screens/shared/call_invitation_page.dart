@@ -1,58 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:medconnect/screens/shared/video_call_page.dart';
-import 'package:dio/dio.dart';
-import 'package:medconnect/utils/config.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class CallInvitationPage extends StatelessWidget {
   final String channelName;
   final String callerName;
 
   const CallInvitationPage({
-    Key? key,
+    super.key,
     required this.channelName,
     required this.callerName,
-  }) : super(key: key);
+  });
 
-  void _respondToCall(BuildContext context, String response) async {
-    final dio = Dio();
-    try {
-      await dio.post('${Config.apiUrl}/call-response', data: {
-        'channelName': channelName,
-        'response': response,
-      });
-      if (response == 'accepted') {
-        // Navigate to the video call page
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => VideoCallPage(channelName: channelName),
+  static void handleIncomingCall(RemoteMessage message, BuildContext context) {
+    if (message.data['type'] == 'call-invitation') {
+      final channelName = message.data['channelName'];
+      final callerName = message.data['callerName'];
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CallInvitationPage(
+            channelName: channelName,
+            callerName: callerName,
           ),
-        );
-      } else {
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      debugPrint('Error sending call response: $e');
-    }
-  }
-
-  void _sendAcknowledgment(String status) async {
-    final dio = Dio();
-    try {
-      await dio.post('${Config.apiUrl}/invitation-acknowledgment', data: {
-        'channelName': channelName,
-        'status': status, // e.g., "received", "ignored", "answered"
-      });
-      debugPrint('Acknowledgment sent: $status');
-    } catch (e) {
-      debugPrint('Error sending acknowledgment: $e');
+        ),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Send acknowledgment when the page is opened
-    _sendAcknowledgment('received');
+    print('Debug: CallInvitationPage arguments - channelName: $channelName, callerName: $callerName');
 
     return Scaffold(
       appBar: AppBar(title: const Text('Incoming Call')),
@@ -67,15 +46,20 @@ class CallInvitationPage extends StatelessWidget {
               children: [
                 ElevatedButton(
                   onPressed: () {
-                    _sendAcknowledgment('answered');
-                    _respondToCall(context, 'accepted');
+                    print('Debug: Call accepted. Navigating to VideoCallPage with roomId: $channelName');
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => VideoCallPage(channelName: channelName),
+                      ),
+                    );
                   },
                   child: const Text('Answer'),
                 ),
                 ElevatedButton(
                   onPressed: () {
-                    _sendAcknowledgment('ignored');
-                    _respondToCall(context, 'declined');
+                    print('Debug: Call ignored. Returning to previous screen.');
+                    Navigator.pop(context);
                   },
                   child: const Text('Ignore'),
                 ),

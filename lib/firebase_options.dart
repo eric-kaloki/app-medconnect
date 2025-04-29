@@ -43,6 +43,7 @@ class DefaultFirebaseOptions {
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyB83LBRPQuMabzHsn2Mtucs9Y9xTeqzEJ0',
     appId: '1:700062154047:web:e538dfb97ceeeb190b678a',
+    databaseURL: 'https://mastermind-1a14c-default-rtdb.firebaseio.com',
     messagingSenderId: '700062154047',
     projectId: 'mastermind-1a14c',
     authDomain: 'mastermind-1a14c.firebaseapp.com',

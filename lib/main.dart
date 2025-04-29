@@ -15,9 +15,11 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform, // Use Firebase options
-  );
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  }
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   // Initialize FCM and save the token
@@ -32,16 +34,51 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print('Debug: Received FCM message: ${message.data}');
+
+      if (message.data['type'] == 'call-invitation') {
+        final channelName = message.data['channelName'];
+        final callerName = message.data['callerName'];
+
+        print('Debug: Extracted channelName: $channelName (Type: ${channelName.runtimeType})');
+        print('Debug: Extracted callerName: $callerName (Type: ${callerName.runtimeType})');
+
+        if (channelName is! String || callerName is! String) {
+          print('Error: Invalid data types in FCM message.');
+          return;
+        }
+
+        navigatorKey.currentState?.pushNamed(
+          '/call-invitation',
+          arguments: {
+            'channelName': channelName,
+            'callerName': callerName,
+          },
+        );
+      } else {
+        print('Debug: Non-call invitation FCM message received: ${message.data}');
+      }
+    });
+
     return MaterialApp(
       navigatorKey: navigatorKey,
       title: 'MedConnect',
       home: const ChooseUserRole(),
       routes: {
         ...AppRoutes.routes,
-        '/call-invitation': (context) => CallInvitationPage(
-              channelName: ModalRoute.of(context)!.settings.arguments as String,
-              callerName: 'Caller Name', // Replace with actual caller name
-            ),
+        '/call-invitation': (context) {
+          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+          final channelName = args['channelName'] as String;
+          final callerName = args['callerName'] as String;
+
+          print('Debug: Decoded arguments for CallInvitationPage - channelName: $channelName, callerName: $callerName');
+
+          return CallInvitationPage(
+            channelName: channelName,
+            callerName: callerName,
+          );
+        },
         '/video-call': (context) => VideoCallPage(
               channelName: ModalRoute.of(context)!.settings.arguments as String,
             ),

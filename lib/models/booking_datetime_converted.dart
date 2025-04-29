@@ -1,11 +1,12 @@
 import 'package:intl/intl.dart';
 
-//this basically is to convert date/day/time from calendar to string
 class DateConverted {
+  // Formats a DateTime object into a string with the format 'yyyy-MM-dd'.
   static String getDate(DateTime date) {
-    return DateFormat.yMd().format(date);
+    return DateFormat('yyyy-MM-dd').format(date);
   }
 
+  // Converts a day number (1-7) to its corresponding day name.
   static String getDay(int day) {
     switch (day) {
       case 1:
@@ -63,6 +64,23 @@ class DateConverted {
         return '4:30 PM';
       default:
         return 'Invalid Time';
+    }
+  }
+
+  // Updates the getTimeIndex method to handle AM/PM time strings.
+  static int getTimeIndex(String time) {
+    try {
+      final parsedTime = DateFormat.jm().parse(time); // Parse "4:00 PM"
+      final hour = parsedTime.hour;
+      final minute = parsedTime.minute;
+
+      if (hour < 9 || hour > 16 || (minute != 0 && minute != 30)) {
+        return -1; // Out of range
+      }
+      return (hour - 9) * 2 + (minute == 30 ? 1 : 0);
+    } catch (e) {
+      print('Error parsing time: $time, $e');
+      return -1; // Invalid format
     }
   }
 }

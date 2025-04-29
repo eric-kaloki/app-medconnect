@@ -33,7 +33,7 @@ class AppRoutes {
       appointments: (context) =>  AppointmentScreen(),
       booking: (context) => const BookingPage(),
       successBooking: (context) => const SuccessBooked(date: '', time: '', doctorName: '',),
-      doctorAppointments: (context) => AppointmentDetailsPage(
+      doctorAppointments: (context) => AppointmentDetailsPage(patientId: '',
         appointmentDate: DateTime(2023, 10, 1), // Example date
         name: 'John Doe', // Example name
         appointmentTime: '10:00 AM', // Example time

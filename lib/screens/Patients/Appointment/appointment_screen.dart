@@ -79,7 +79,11 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
       }
 
       setState(() {
-        appointments = List<Map<String, dynamic>>.from(response['appointments']);
+        appointments =
+            List<Map<String, dynamic>>.from(response['appointments']);
+        print('Fetched appointments: $appointments');
+        widget.appointmentsNotifier.value =
+            appointments; // Update the shared state
         schedules = appointments; // Update schedules with fetched appointments
         AppointmentCache.appointments = appointments; // Update global cache
         isLoading = false;
@@ -87,7 +91,8 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
 
       // Cache the appointments locally
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString("cachedAppointments", json.encode({'appointments': appointments}));
+      await prefs.setString(
+          "cachedAppointments", json.encode({'appointments': appointments}));
     } catch (e) {
       setState(() {
         errorMessage = 'Failed to load appointments. Please try again later.';
@@ -119,11 +124,15 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
     // Filter the appointments based on status.
     List<dynamic> filteredSchedules;
     if (status == FilterStatus.upcoming) {
+      print('Schedules: $schedules');
       filteredSchedules = schedules.where((schedule) {
         final appointmentDate = DateTime.parse(schedule['date']);
+        final now = DateTime.now();
         return schedule['status'] == 'upcoming' &&
-            appointmentDate.isAfter(DateTime.now());
+            !appointmentDate.isBefore(
+                DateTime(now.year, now.month, now.day)); //corrected line
       }).toList();
+      print('Filtered upcoming appointments: $filteredSchedules');
     } else if (status == FilterStatus.complete) {
       filteredSchedules = schedules
           .where((schedule) => schedule['status'] == 'complete')
@@ -138,7 +147,6 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
         centerTitle: true,
         automaticallyImplyLeading: false,
         title: Text(
@@ -150,7 +158,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
           textAlign: TextAlign.center,
         ),
       ),
-       floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.of(context).push(
             MaterialPageRoute(
@@ -184,7 +192,8 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
               : appointments.isEmpty
                   ? const Center(child: Text('No appointments found.'))
                   : Padding(
-                      padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 20),
+                      padding: EdgeInsets.symmetric(
+                          horizontal: horizontalPadding, vertical: 20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: <Widget>[
@@ -197,7 +206,8 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
                             ),
                             child: Row(
                               children: [
-                                for (FilterStatus filterStatus in FilterStatus.values)
+                                for (FilterStatus filterStatus
+                                    in FilterStatus.values)
                                   Expanded(
                                     child: GestureDetector(
                                       onTap: () {
@@ -211,9 +221,11 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
                                               horizontal: 16.0, vertical: 8.0),
                                           decoration: BoxDecoration(
                                             color: status == filterStatus
-                                                ? const Color.fromARGB(30, 105, 240, 174)
+                                                ? const Color.fromARGB(
+                                                    30, 105, 240, 174)
                                                 : Colors.transparent,
-                                            borderRadius: BorderRadius.circular(8.0),
+                                            borderRadius:
+                                                BorderRadius.circular(8.0),
                                           ),
                                           child: Text(
                                             filterStatus.name.toUpperCase(),
@@ -240,28 +252,35 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
                               itemCount: filteredSchedules.length,
                               itemBuilder: (context, index) {
                                 var schedule = filteredSchedules[index];
-                              if (schedule['status'] == 'upcoming') {
-                                return AppointmentCard(
-                                hasAppointment: true,
-                                doctorName: schedule['doctorName'] ?? 'Unknown',
-                                doctorId: schedule['doctor_id'] ?? 'Unknown', // Corrected key
-                                category: schedule['doctorCategory'] ?? 'General', // Corrected key
-                                appointmentDateTime: DateTime.parse(schedule['date']),
-                                time: schedule['time'] ?? 'Unknown',
-                                appointmentId: schedule['id'],
-                                );
-                              
+                                if (schedule['status'] == 'upcoming') {
+                                  return AppointmentCard(
+                                    hasAppointment: true,
+                                    doctorName:
+                                        schedule['doctorName'] ?? 'Unknown',
+                                    doctorId: schedule['doctor_id'] ??
+                                        'Unknown', // Corrected key
+                                    category: schedule['doctorCategory'] ??
+                                        'General', // Corrected key
+                                    appointmentDateTime:
+                                        DateTime.parse(schedule['date']),
+                                    time: schedule['time'] ?? 'Unknown',
+                                    appointmentId: schedule['id'],
+                                  );
                                 } else if (schedule['status'] == 'complete') {
                                   return CompletedAppointmentCard(
-                                    doctorName: schedule['doctorName'] ?? 'Unknown',
+                                    doctorName:
+                                        schedule['doctorName'] ?? 'Unknown',
                                     category: schedule['category'] ?? 'General',
-                                    appointmentDateTime: DateTime.parse(schedule['date']),
+                                    appointmentDateTime:
+                                        DateTime.parse(schedule['date']),
                                   );
-                                } else if (schedule['status'] == 'cancel') {
+                                } else if (schedule['status'] == 'pending') {
                                   return CanceledAppointmentCard(
-                                    doctorName: schedule['doctorName'] ?? 'Unknown',
+                                    doctorName:
+                                        schedule['doctorName'] ?? 'Unknown',
                                     category: schedule['category'] ?? 'General',
-                                    appointmentDateTime: DateTime.parse(schedule['date']),
+                                    appointmentDateTime:
+                                        DateTime.parse(schedule['date']),
                                   );
                                 } else {
                                   return const SizedBox.shrink();

@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:medconnect/screens/shared/video_call_page.dart';
@@ -14,6 +15,7 @@ class AppointmentDetailsPage extends StatefulWidget {
   final String appointmentTime;
   final String appointmentId;
   final String name;
+  final String patientId;
 
   // Default (or prefilled) values for medical records
   final String diagnosisDefault;
@@ -25,6 +27,7 @@ class AppointmentDetailsPage extends StatefulWidget {
     required this.appointmentDate,
     required this.appointmentTime,
     required this.appointmentId,
+    required this.patientId,
     this.diagnosisDefault = "No diagnosis yet.",
     this.prescriptionDefault = "No prescription added.",
   }) : super(key: key);
@@ -38,6 +41,7 @@ class _AppointmentDetailsPageState extends State<AppointmentDetailsPage> {
   List<dynamic> prescriptions = [];
   List<dynamic> testResults = [];
   List<dynamic> treatmentPlans = [];
+  bool isCallInProgress = false; // Track call status
 
   @override
   void initState() {
@@ -67,6 +71,12 @@ class _AppointmentDetailsPageState extends State<AppointmentDetailsPage> {
     } catch (error) {
       throw Exception('Error fetching medical records: $error');
     }
+  }
+
+  void _updateCallStatus(bool status) {
+    setState(() {
+      isCallInProgress = status;
+    });
   }
 
   @override
@@ -142,16 +152,67 @@ class _AppointmentDetailsPageState extends State<AppointmentDetailsPage> {
               minimumSize: const Size.fromHeight(50),
               backgroundColor: Config.primaryColor,
             ),
-            onPressed: () {
-              // Using appointment ID as channel name:
-              String channelName = 'appointment_${widget.appointmentId}';
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => VideoCallPage(channelName: channelName),
-                ),
-              );
-            },
+            onPressed: isCallInProgress
+                ? null // Disable button if a call is in progress
+                : () async {
+                    _updateCallStatus(true); // Set call in progress
+                    final prefs = await SharedPreferences.getInstance();
+                    final senderId = prefs.getString('jwt');
+                    final recipientId = widget.patientId; // Ensure this is the patient's ID
+                    final roomId = widget.appointmentId;
+
+                    print('Debug: Initiating call with the following details:');
+                    print('RoomId (String): $roomId');
+                    print('SenderId (String): $senderId');
+                    print('RecipientId (String): $recipientId');
+
+                    if (recipientId == null || senderId == null) {
+                      print('Error: Missing required fields.');
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Unable to initiate call. Missing data.')),
+                      );
+                      _updateCallStatus(false); // Reset call status
+                      return;
+                    }
+
+                    try {
+                      final response = await Dio().post(
+                        '${Config.apiUrl}/api/appointments/send-invitation', // Ensure the correct API URL
+                        data: {
+                          'recipientId': recipientId,
+                          'callerName': prefs.getString('fullName'),
+                          'channelName': roomId,
+                        },
+                      );
+
+                      print('Debug: API Response Status Code: ${response.statusCode}');
+                      print('Debug: API Response Data: ${response.data}');
+
+                      if (response.statusCode == 200) {
+                        print('Call invitation sent successfully for roomId: $roomId');
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => VideoCallPage(
+                              channelName: roomId,
+                            ),
+                          ),
+                        ).then((_) => _updateCallStatus(false)); // Reset call status after call ends
+                      } else {
+                        print('Error: Failed to send call invitation for roomId: $roomId');
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Failed to send call invitation.')),
+                        );
+                        _updateCallStatus(false); // Reset call status
+                      }
+                    } catch (e) {
+                      print('Error: Exception occurred while sending call invitation for roomId: $roomId. Exception: $e');
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e')),
+                      );
+                      _updateCallStatus(false); // Reset call status
+                    }
+                  },
             icon: const Icon(Icons.video_call),
             label: const Text("Join Video Call"),
           ),

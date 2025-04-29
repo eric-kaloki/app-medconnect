@@ -15,8 +15,10 @@ class AppointmentCard extends StatefulWidget {
   final bool isRescheduled; // New field to indicate rescheduled appointments
   final String doctorId; // New field for doctor ID
   final String status; // Add status
+  final String patientId; // New field for patient ID
 
   AppointmentCard({
+    this.patientId = '',
     this.patientName = '',
     DateTime? appointmentDate,
     this.appointmentTime = '',
@@ -171,6 +173,7 @@ class _AppointmentCardState extends State<AppointmentCard> {
                             appointmentTime: widget.appointmentTime,
                             name: widget.patientName,
                             appointmentId: widget.appointmentId,
+                            patientId: widget.patientId, // Pass the doctor ID
                           ),
                         ),
                       );
@@ -186,41 +189,36 @@ class _AppointmentCardState extends State<AppointmentCard> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                if (widget.status ==
-                    'pending') // Show Reschedule only if status is not pending
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                      ),
-                      onPressed: () {
-                        Navigator.pushNamed(
-                          context,
-                          AppRoutes.booking, // Redirect to the booking page
-                          arguments: {
-                            'appointmentId': widget.appointmentId,
-                            'doctorId': widget.doctorId, // Pass the doctor ID
-                            'doctorName':
-                                widget.patientName, // Pass the patient's name
-                            'preFilledDate':
-                                widget.appointmentDate, // Pre-fill the date
-                            'preFilledTime':
-                                widget.appointmentTime, // Pre-fill the time
-                            'initiator':
-                                'doctor', // Indicate that the doctor initiated the reschedule
-                          },
-                        );
-                      },
-                      child: const Text(
-                        'Reschedule',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                    ),
+                    onPressed: () {
+                      Navigator.pushNamed(
+                        context,
+                        AppRoutes.booking, // Redirect to the booking page
+                        arguments: {
+                          'appointmentId': widget.appointmentId,
+                          'doctorId': widget.doctorId, // Pass the doctor ID
+                          'doctorName': widget.patientName, // Pass the patient's name
+                          'preFilledDate': widget.appointmentDate, // Pre-fill the date
+                          'preFilledTime': widget.appointmentTime, // Pre-fill the time
+                          'initiator': 'doctor', // Indicate that the doctor initiated the reschedule
+                          'bookingType': 'reschedule', // Indicate that this is a reschedule
+                        },
+                      );
+                    },
+                    child: const Text(
+                      'Reschedule',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
+                ),
               ],
             ),
             const SizedBox(height: 15),

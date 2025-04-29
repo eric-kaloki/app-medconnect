@@ -30,87 +30,95 @@ class _BookingPageState extends State<BookingPage> {
   List<int> blockedSlots = [];
   List<int> bookedSlots = [];
   String? userRole;
-  List<Map<String, dynamic>> serverBlockedSlots =
-      []; // Store blocked slots from the server
-  String? doctorId; // Store the doctor's ID
-  String? doctorName; // Optionally store the doctor's name
+  List<Map<String, dynamic>> serverBlockedSlots = [];
+  String? doctorId;
+  String? doctorName;
   DateTime? preFilledDate;
   String? preFilledTime;
   String? appointmentId = '';
+  String _bookingType =
+      'new'; // 'new', 'reschedule', or 'block'.  Defaults to 'new'
 
   Future<void> getToken() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     token = prefs.getString('jwt') ?? '';
   }
 
-  Future<void> fetchBlockedAndBookedSlots() async {
+  Future<void> fetchSlots() async {
     try {
-      final getDate =
-          DateConverted.getDate(_currentDay); // Get the selected date
+      final getDate = DateConverted.getDate(_currentDay);
       if (doctorId == null) {
         throw Exception('Doctor ID is missing');
       }
 
-      final response = await DioProvider()
+      final blockedAndBookedResponse = await DioProvider()
           .getBlockedAndBookedSlots(token!, getDate, doctorId!);
 
-      if (response != 'Error') {
+      final doctorBlockedResponse =
+          await DioProvider().getDoctorBlockedSlots(token!);
+
+      if (blockedAndBookedResponse != 'Error' &&
+          doctorBlockedResponse != 'Error') {
         setState(() {
-          blockedSlots = response['blockedSlots'].map<int>((time) {
-            // Convert time string to an index for UI mapping
-            final hour = int.parse(time.split(':')[0]);
-            final minute = int.parse(time.split(':')[1].split(' ')[0]);
-            return (hour - 9) * 2 + (minute == 30 ? 1 : 0); // Map to slot index
+          // Parse blocked slots, using DateConverted.getTime() for comparison
+          blockedSlots = blockedAndBookedResponse['blockedSlots']
+              .map<int>((timeString) {
+                final index = List.generate(16, (i) => i).firstWhere(
+                  (i) => DateConverted.getTime(i) == timeString,
+                  orElse: () => -1,
+                );
+                return index;
+              })
+              .where((index) => index != -1)
+              .toList();
+
+          // Parse booked slots, using DateConverted.getTime() for comparison
+          bookedSlots = blockedAndBookedResponse['bookedSlots']
+              .map<int>((timeString) {
+                final index = List.generate(16, (i) => i).firstWhere(
+                  (i) => DateConverted.getTime(i) == timeString,
+                  orElse: () => -1,
+                );
+                return index;
+              })
+              .where((index) => index != -1)
+              .toList();
+          // Process doctor-specific blocked slots
+          serverBlockedSlots =
+              doctorBlockedResponse.map<Map<String, dynamic>>((slot) {
+            return {
+              'date': slot['date'],
+              'day': slot['day'],
+              'time': slot['time'],
+            };
           }).toList();
 
-          bookedSlots = response['bookedSlots'].map<int>((time) {
-            // Convert time string to an index for UI mapping
-            final hour = int.parse(time.split(':')[0]);
-            final minute = int.parse(time.split(':')[1].split(' ')[0]);
-            return (hour - 9) * 2 + (minute == 30 ? 1 : 0); // Map to slot index
+          // Filter doctor-specific blocked slots for the current day
+          serverBlockedSlots = serverBlockedSlots.where((slot) {
+            final slotDate = DateTime.parse(slot['date']);
+            return slotDate.year == _currentDay.year &&
+                slotDate.month == _currentDay.month &&
+                slotDate.day == _currentDay.day;
           }).toList();
+
+          // Merge doctor-specific blocked slots into the blockedSlots list
+          blockedSlots.addAll(serverBlockedSlots
+              .map((slot) {
+                final timeString = slot['time'] as String;
+                final index = List.generate(16, (i) => i).firstWhere(
+                  (i) => DateConverted.getTime(i) == timeString,
+                  orElse: () => -1,
+                );
+                return index;
+              })
+              .where((index) => index != -1)
+              .toList());
         });
       }
     } catch (e) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error fetching slots: $e')),
-        );
-      });
-    }
-  }
-
-  Future<void> fetchDoctorBlockedSlots() async {
-    try {
-      final response = await DioProvider().getDoctorBlockedSlots(token!);
-      setState(() {
-        serverBlockedSlots = response.map<Map<String, dynamic>>((slot) {
-          return {
-            'date': slot['date'],
-            'day': slot['day'],
-            'time': slot['time'],
-          };
-        }).toList();
-        // Filter slots for the currently selected date.  Crucially, we do *not*
-        // convert to indices here.  We keep the server representation.
-        serverBlockedSlots = serverBlockedSlots.where((slot) {
-          final slotDate = DateTime.parse(slot['date']);
-          return slotDate.year == _currentDay.year &&
-              slotDate.month == _currentDay.month &&
-              slotDate.day == _currentDay.day;
-        }).toList();
-        blockedSlots = serverBlockedSlots.map((slot) {
-          // Convert time string to an index for UI mapping
-          final timeString = slot['time'] as String;
-          final hour = int.parse(timeString.split(':')[0]);
-          final minute = int.parse(timeString.split(':')[1].split(' ')[0]);
-          return (hour - 9) * 2 + (minute == 30 ? 1 : 0); // Map to slot index
-        }).toList();
-      });
-    } catch (e) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error fetching blocked slots: $e')),
         );
       });
     }
@@ -124,33 +132,37 @@ class _BookingPageState extends State<BookingPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final arguments = ModalRoute.of(context)!.settings.arguments;
       if (arguments != null && arguments is Map<String, dynamic>) {
         setState(() {
-          doctorId = arguments['doctorId'] ?? ''; // Retrieve the doctor's ID
-          doctorName = arguments['doctorName'] ?? 'Unknown Doctor'; // Retrieve the doctor's name
-          preFilledDate = arguments['preFilledDate']; // Retrieve pre-filled date
-          preFilledTime = arguments['preFilledTime']; // Retrieve pre-filled time
-          appointmentId = arguments['appointmentId']; // Retrieve appointment ID
+          doctorId = arguments['doctorId'] ?? '';
+          doctorName = arguments['doctorName'] ?? 'Unknown Doctor';
+          preFilledDate = arguments['preFilledDate'];
+          preFilledTime = arguments['preFilledTime'];
+          appointmentId = arguments['appointmentId'];
+          _bookingType = arguments['bookingType'] ?? 'new';
         });
       } else {
-        debugPrint('doctorId is missing in arguments');
+        debugPrint('Arguments are missing or invalid');
       }
 
-      // Fetch user role and slots after doctorId is set
+      await getToken();
+      await getUserRole();
+
+      // Fetch slots immediately in initState
       if (doctorId != null && doctorId!.isNotEmpty) {
-        getToken().then((_) {
-          getUserRole().then((_) {
-            if (userRole == 'doctor') {
-              fetchDoctorBlockedSlots();
-            } else {
-              fetchBlockedAndBookedSlots();
-            }
-          });
-        });
-      } else {
-        debugPrint('Cannot fetch slots: doctorId is null or empty');
+        await fetchSlots();
+      }
+
+      if (preFilledDate != null) {
+        _currentDay = preFilledDate!;
+        _focusDay = preFilledDate!;
+        _dateSelected = true;
+      }
+      if (preFilledTime != null) {
+        _currentIndex = DateConverted.getTimeIndex(preFilledTime!);
+        _timeSelected = true;
       }
     });
   }
@@ -158,7 +170,6 @@ class _BookingPageState extends State<BookingPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // No need to set doctorId here anymore
   }
 
   void _evaluateWeekend(DateTime date) {
@@ -168,17 +179,6 @@ class _BookingPageState extends State<BookingPage> {
       if (_isWeekend) {
         _timeSelected = false;
         _currentIndex = null;
-      } else {
-        // Ensure doctorId is set before calling fetchBlockedAndBookedSlots
-        if (doctorId != null && doctorId!.isNotEmpty) {
-          if (userRole == 'doctor') {
-            fetchDoctorBlockedSlots();
-          } else {
-            fetchBlockedAndBookedSlots();
-          }
-        } else {
-          debugPrint('Cannot fetch slots: doctorId is null or empty');
-        }
       }
     });
   }
@@ -186,21 +186,27 @@ class _BookingPageState extends State<BookingPage> {
   @override
   Widget build(BuildContext context) {
     Config().init(context);
-    final arguments = ModalRoute.of(context)!.settings.arguments;
-    Map<String, dynamic> doctor;
-    if (arguments is Map<String, dynamic>) {
-      doctor = arguments;
-    } else {
-      doctor = {};
-    }
 
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 600;
 
+    String appBarTitle = '';
+    String buttonTitle = '';
+
+    if (_bookingType == 'new') {
+      appBarTitle = 'Book Appointment';
+      buttonTitle = 'Confirm Appointment';
+    } else if (_bookingType == 'reschedule') {
+      appBarTitle = 'Reschedule Appointment';
+      buttonTitle = 'Confirm Reschedule';
+    } else if (_bookingType == 'block') {
+      appBarTitle = 'Block Time Slots';
+      buttonTitle = 'Confirm Block Time';
+    }
+
     return Scaffold(
       appBar: CustomAppBar(
-        appTitle:
-            userRole == 'doctor' ? 'Block Time' : 'Reschedule Appointment',
+        appTitle: appBarTitle,
         icon: const FaIcon(Icons.arrow_back_ios),
       ),
       body: LayoutBuilder(
@@ -218,7 +224,9 @@ class _BookingPageState extends State<BookingPage> {
                       _tableCalendar(),
                       const SizedBox(height: 25),
                       const SizedBox(height: 15),
-                      if (preFilledDate != null && preFilledTime != null)
+                      if (preFilledDate != null &&
+                          preFilledTime != null &&
+                          _bookingType != 'block')
                         Text(
                           'Current Appointment: ${DateConverted.getDate(preFilledDate!)} at $preFilledTime',
                           style:
@@ -226,15 +234,17 @@ class _BookingPageState extends State<BookingPage> {
                         ),
                       const SizedBox(height: 15),
                       Text(
-                        userRole == 'doctor'
-                            ? 'Blocking time slots for patients'
-                            : 'Rescheduling appointment with Dr. $doctorName',
+                        _bookingType == 'new'
+                            ? 'Book an Appointment with Dr. $doctorName'
+                            : _bookingType == 'reschedule'
+                                ? 'Rescheduling appointment with Dr. $doctorName'
+                                : 'Blocking time slots for patients',
                       ),
                     ],
                   ),
                 ),
               ),
-              userRole == 'doctor'
+              userRole == 'doctor' && _bookingType == 'block'
                   ? _blockTimeUI(isSmallScreen)
                   : _appointmentSlotsUI(isSmallScreen),
               SliverToBoxAdapter(
@@ -245,41 +255,146 @@ class _BookingPageState extends State<BookingPage> {
                   ),
                   child: Button(
                     width: double.infinity,
-                    title: 'Confirm Reschedule',
+                    title: buttonTitle,
                     onPressed: () async {
-                      final getDate = DateFormat('yyyy-MM-dd').format(_currentDay); // Format date as YYYY-MM-DD
-                      final getTime = DateConverted.getTime(_currentIndex!);
+                      final getDate = DateFormat('yyyy-MM-dd')
+                          .format(_currentDay); // Format date
+                      final getTime = _timeSelected && _currentIndex != null
+                          ? DateConverted.getTime(_currentIndex!)
+                          : null;
 
-                      if (getTime == 'Invalid Time') {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Invalid time slot selected')),
-                        );
-                        return;
-                      }
-
-                      Map<String, dynamic> rescheduleData = {
-                        'appointmentId': appointmentId, // Use doctorId as appointmentId
-                        'newDate': getDate, // Send date in YYYY-MM-DD format
-                        'newTime': getTime,
-                        'initiator': 'patient', // Ensure initiator is set
-                        'token': token,
-                      };
-
-                      try {
-                        final response = await DioProvider().rescheduleAppointment(rescheduleData);
-                        if (response.statusCode == 200) {
+                      if (_bookingType == 'block') {
+                        if (blockedSlots.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Appointment rescheduled successfully')),
+                            const SnackBar(
+                                content:
+                                    Text('No time slots selected to block')),
                           );
-                          Navigator.pop(context); // Go back to the previous page
+                          return;
                         }
-                      } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error: $e')),
-                        );
+
+                        List<Map<String, dynamic>> blockedTimes =
+                            blockedSlots.map((index) {
+                          final time = DateConverted.getTime(index);
+                          return {
+                            'date': getDate,
+                            'day': DateFormat('EEEE').format(_currentDay),
+                            'time': time,
+                          };
+                        }).toList();
+
+                        try {
+                          if (token == null || token!.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content:
+                                      Text('Authentication token is missing')),
+                            );
+                            return;
+                          }
+
+                          final response = await DioProvider().blockTimeSlots({
+                            'blockedSlots': blockedTimes,
+                            'token': token,
+                          });
+
+                          if (response.statusCode == 200) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content:
+                                      Text('Time slots blocked successfully')),
+                            );
+                            Navigator.pop(context);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Failed to block time slots.')),
+                            );
+                          }
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Error: $e')),
+                          );
+                        }
+                      } else {
+                        if (!_timeSelected || getTime == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content:
+                                    Text('Please select a valid time slot.')),
+                          );
+                          return;
+                        }
+
+                        if (_bookingType == 'new') {
+                          Map<String, dynamic> appointmentData = {
+                            'date': getDate,
+                            'day': DateFormat('EEEE').format(_currentDay),
+                            'time': getTime,
+                            'doctor_id': doctorId,
+                          };
+
+                          try {
+                            final response = await DioProvider()
+                                .bookAppointment(appointmentData, token!);
+                            if (response.statusCode == 201) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        'Appointment booked successfully')),
+                              );
+                              Navigator.pop(context);
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content:
+                                        Text('Failed to book appointment.')),
+                              );
+                            }
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error: $e')),
+                            );
+                          }
+                        } else if (_bookingType == 'reschedule') {
+                          Map<String, dynamic> rescheduleData = {
+                            'appointmentId': appointmentId,
+                            'newDate': getDate,
+                            'newTime': getTime,
+                            'initiator': userRole == 'doctor'
+                                ? 'doctor'
+                                : 'patient', // Set initiator
+                            'token': token,
+                          };
+                          try {
+                            final response = await DioProvider()
+                                .rescheduleAppointment(rescheduleData);
+                            if (response.statusCode == 200) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        'Appointment rescheduled successfully')),
+                              );
+                              Navigator.pop(context);
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        'Failed to reschedule appointment.')),
+                              );
+                            }
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error: $e')),
+                            );
+                          }
+                        }
                       }
                     },
-                    disable: !_timeSelected || !_dateSelected,
+                    disable: (_bookingType == 'block' && !_dateSelected) ||
+                        (!_timeSelected &&
+                            _bookingType !=
+                                'block'), // Disable if no time selected
                   ),
                 ),
               ),
@@ -293,9 +408,8 @@ class _BookingPageState extends State<BookingPage> {
   // Table calendar
   Widget _tableCalendar() {
     return TableCalendar(
-      focusedDay: _focusDay.isBefore(DateTime.now())
-          ? DateTime.now()
-          : _focusDay, // Ensure focusedDay is valid
+      focusedDay:
+          _focusDay.isBefore(DateTime.now()) ? DateTime.now() : _focusDay,
       firstDay: DateTime.now(),
       lastDay: DateTime(2028, 12, 31),
       calendarFormat: _format,
@@ -314,211 +428,195 @@ class _BookingPageState extends State<BookingPage> {
           _format = format;
         });
       },
-      onDaySelected: ((selectedDay, focusedDay) {
+      onDaySelected: ((selectedDay, focusedDay) async {
+        // Fetch slots when a new day is selected
         setState(() {
           _currentDay = selectedDay;
-          _focusDay = focusedDay.isBefore(DateTime.now())
-              ? DateTime.now()
-              : focusedDay; // Ensure focusedDay is valid
+          _focusDay =
+              focusedDay.isBefore(DateTime.now()) ? DateTime.now() : focusedDay;
           _dateSelected = true;
+          _timeSelected = false; // Reset time selection when day changes.
+          _currentIndex = null;
         });
-        _evaluateWeekend(
-            selectedDay); // Re-evaluate if the selected day is a weekend
+        _evaluateWeekend(selectedDay);
+        if (!_isWeekend && doctorId != null && doctorId!.isNotEmpty) {
+          await fetchSlots();
+        }
       }),
     );
   }
 
   Widget _blockTimeUI(bool isSmallScreen) {
-    return _isWeekend
-        ? SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: isSmallScreen ? 10 : 20,
-                vertical: isSmallScreen ? 30 : 40,
-              ),
-              child: const Text(
-                'Weekends are not available for blocking.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: isSmallScreen ? 10 : 20,
+          vertical: isSmallScreen ? 10 : 20,
+        ),
+        child: Column(
+          children: [
+            const Text(
+              'Block Time Slots',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+            ),
+            const SizedBox(height: 15),
+            if (_isWeekend)
+              const Padding(
+                padding: EdgeInsets.only(top: 20),
+                child: Text(
+                  'Weekends are not available for blocking.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
+                ),
+              )
+            else
+              SingleChildScrollView(
+                scrollDirection: Axis.vertical,
+                child: GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: 16,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: isSmallScreen ? 4 : 6,
+                    childAspectRatio: isSmallScreen ? 1.5 : 2,
+                  ),
+                  itemBuilder: (context, index) {
+                    final String time =
+                        DateConverted.getTime(index); // Get time string
+                    final isServerBlocked = serverBlockedSlots.any((slot) =>
+                        slot['date'] ==
+                            DateFormat('yyyy-MM-dd').format(_currentDay) &&
+                        slot['time'] == time);
+                    final isLocallyBlocked =
+                        blockedSlots.contains(index); // Correct
+                    final isBooked =
+                        bookedSlots.contains(index); // Check if booked
+
+                    return InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (isServerBlocked) {
+                            // Unblock
+                            serverBlockedSlots.removeWhere((slot) =>
+                                slot['date'] ==
+                                    DateFormat('yyyy-MM-dd')
+                                        .format(_currentDay) &&
+                                slot['time'] == time);
+                            blockedSlots.remove(index);
+                          } else {
+                            if (blockedSlots.contains(index)) {
+                              blockedSlots.remove(index);
+                            } else {
+                              blockedSlots.add(index);
+                            }
+                          }
+                          _timeSelected = blockedSlots.isNotEmpty;
+                        });
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.black),
+                          borderRadius: BorderRadius.circular(15),
+                          color: isServerBlocked
+                              ? Colors.red
+                              : isLocallyBlocked
+                                  ? Colors.red
+                                  : isBooked
+                                      ? Colors.orange
+                                      : blockedSlots.contains(index)
+                                          ? Config.primaryColor
+                                          : Colors.green,
+                        // Blocked slots in red, booked slots in orange
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          time,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: isServerBlocked || isLocallyBlocked
+                                ? Colors.white
+                                : Colors.black,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
-            ),
-          )
-        : SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: isSmallScreen ? 10 : 20,
-                vertical: isSmallScreen ? 10 : 20,
-              ),
-              child: Column(
-                children: [
-                  const Text(
-                    'Block Time Slots',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-                  ),
-                  const SizedBox(height: 15),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount:
-                          16, // Dynamically adjust based on available slots
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: isSmallScreen ? 4 : 6,
-                        childAspectRatio: isSmallScreen ? 1.5 : 2,
-                      ),
-                      itemBuilder: (context, index) {
-                        final String time =
-                            DateConverted.getTime(index); // Get time string
-                        // Check if this time slot is in the serverBlockedSlots for the current day
-                        final isServerBlocked = serverBlockedSlots.any((slot) =>
-                            slot['date'] ==
-                                DateConverted.getDate(_currentDay) &&
-                            slot['time'] == time);
-
-                        bool isLocallyBlocked = blockedSlots
-                            .contains(index); //check if it is locally blocked.
-
-                        return InkWell(
-                          onTap: () {
-                            setState(() {
-                              if (isServerBlocked) {
-                                // Allow unblocking: Remove from serverBlockedSlots and blockedSlots
-                                serverBlockedSlots.removeWhere((slot) =>
-                                    slot['date'] ==
-                                        DateConverted.getDate(_currentDay) &&
-                                    slot['time'] == time);
-                                blockedSlots.remove(index);
-                              } else {
-                                if (blockedSlots.contains(index)) {
-                                  blockedSlots.remove(index);
-                                } else {
-                                  blockedSlots.add(index);
-                                }
-                              }
-                            });
-                          },
-                          child: Container(
-                            margin: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.black),
-                              borderRadius: BorderRadius.circular(15),
-                              color: isServerBlocked
-                                  ? Colors.red // Blocked by server, priority.
-                                  : isLocallyBlocked
-                                      ? Colors.red
-                                      : Colors.green, // Free slots in green
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              time,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: isServerBlocked || isLocallyBlocked
-                                    ? Colors.white
-                                    : Colors.black,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _appointmentSlotsUI(bool isSmallScreen) {
-    return _isWeekend
-        ? SliverToBoxAdapter(
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: isSmallScreen ? 10 : 20,
-                vertical: isSmallScreen ? 30 : 40,
-              ),
-              alignment: Alignment.center,
-              child: const Text(
-                'Weekend is not available, please select another date',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
+    return SliverPadding(
+      padding: EdgeInsets.symmetric(
+        horizontal: isSmallScreen ? 10 : 20,
+        vertical: isSmallScreen ? 10 : 20,
+      ),
+      sliver: SliverGrid(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final String time =
+                DateConverted.getTime(index); // Get the time string
+            final isBlocked = blockedSlots.contains(index); // Check if blocked
+            final isBooked = bookedSlots.contains(index); // Check if booked
+
+            return InkWell(
+              splashColor: Colors.transparent,
+              onTap: (isBlocked || isBooked)
+                  ? null // Disable interaction for blocked or booked slots
+                  : () {
+                      setState(() {
+                        _currentIndex = index;
+                        _dateSelected = true;
+                        _timeSelected = true;
+                      });
+                    },
+              child: Container(
+                margin: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: _currentIndex == index ? Colors.white : Colors.black,
+                  ),
+                  borderRadius: BorderRadius.circular(15),
+                  color: isBlocked
+                      ? Colors.red // Blocked slots in red
+                      : isBooked
+                          ? Colors.orange // Booked slots in orange
+                          : _currentIndex == index
+                              ? Config
+                                  .primaryColor // Selected slot in primary color
+                              : Colors.green, // Available slots in green
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  time,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isBlocked || isBooked
+                        ? Colors.white // Blocked/Booked slots text in white
+                        : _currentIndex == index
+                            ? Colors.white // Selected slot text in white
+                            : Colors.black, // Available slots text in black
+                  ),
                 ),
               ),
-            ),
-          )
-        : SliverPadding(
-            padding: EdgeInsets.symmetric(
-              horizontal: isSmallScreen ? 10 : 20,
-              vertical: isSmallScreen ? 10 : 20,
-            ),
-            sliver: SliverGrid(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final String time =
-                      DateConverted.getTime(index); // Get the time string
-                  final isBlocked =
-                      blockedSlots.contains(index); // Check if blocked
-                  final isBooked =
-                      bookedSlots.contains(index); // Check if booked
-
-                  return InkWell(
-                    splashColor: Colors.transparent,
-                    onTap: isBlocked || isBooked
-                        ? null // Disable interaction for blocked or booked slots
-                        : () {
-                            setState(() {
-                              _currentIndex = index;
-                              _dateSelected = true;
-                              _timeSelected = true;
-                            });
-                          },
-                    child: Container(
-                      margin: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: _currentIndex == index
-                              ? Colors.white
-                              : Colors.black,
-                        ),
-                        borderRadius: BorderRadius.circular(15),
-                        color: isBlocked
-                            ? Colors.red // Blocked slots in red
-                            : isBooked
-                                ? Colors.orange // Booked slots in orange
-                                : _currentIndex == index
-                                    ? Config.primaryColor // Selected slot
-                                    : Colors.green, // Free slots in green
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        time,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: isBlocked || isBooked
-                              ? Colors.white
-                              : _currentIndex == index
-                                  ? Colors.white
-                                  : Colors.black,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-                childCount: 16, // Dynamically adjust based on available slots
-              ),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: isSmallScreen ? 4 : 6,
-                childAspectRatio: isSmallScreen ? 1.5 : 2,
-              ),
-            ),
-          );
+            );
+          },
+          childCount: 16,
+        ),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: isSmallScreen ? 4 : 6,
+          childAspectRatio: isSmallScreen ? 1.5 : 2,
+        ),
+      ),
+    );
   }
 }

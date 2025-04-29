@@ -87,7 +87,6 @@ class DioProvider {
     try {
       var response = await _dio.post('/api/auth/login',
           data: {'email': email, 'password': password, 'fcmToken': fcmToken});
-
       if (response.statusCode == 200) {
         final prefs = await SharedPreferences.getInstance();
 
@@ -375,10 +374,12 @@ class DioProvider {
   }
 
   Future<Response> blockTimeSlots(Map<String, dynamic> blockData) async {
+    print(
+        "Blocking time slots for doctorId: $blockData");
     try {
       final response = await _dio.post(
         '/api/appointments/block-slots',
-        data: blockData, // Expecting an array of objects with date, day, and time
+        data: blockData,
         options: Options(
           headers: {'Authorization': 'Bearer ${blockData['token']}'},
         ),
@@ -390,6 +391,7 @@ class DioProvider {
   }
 
   Future<Map<String, dynamic>> getBlockedAndBookedSlots(String token, String date, String doctorId) async {
+    print("Fetching blocked and booked slots for date: $date and doctorId: $doctorId, token: $token");
     try {
       final response = await _dio.get(
         '/api/appointments/slots',
@@ -410,6 +412,8 @@ class DioProvider {
 
   Future<List<Map<String, dynamic>>> getDoctorBlockedSlots(String token) async {
     try {
+      print(token);
+      print("Fetching blocked slots for doctor with token: $token");
       final response = await _dio.get(
         '/api/appointments/doctor-blocked-slots',
         options: Options(
@@ -489,4 +493,26 @@ class DioProvider {
       throw Exception('Error fetching pending appointments: $e');
     }
   }
+
+  // Future<void> sendCallInvitation(String recipientId, String callerName, String channelName, String token) async {
+  //   try {
+  //     final response = await _dio.post(
+  //       '/api/appointments/send-invitation',
+  //       data: {
+  //         'recipientId': recipientId,
+  //         'callerName': callerName,
+  //         'channelName': channelName,
+  //       },
+  //       options: Options(
+  //         headers: {'Authorization': 'Bearer $token'},
+  //       ),
+  //     );
+
+  //     if (response.statusCode != 200) {
+  //       throw Exception('Failed to send call invitation. Status code: ${response.statusCode}');
+  //     }
+  //   } catch (error) {
+  //     throw Exception('Error sending call invitation: $error');
+  //   }
+  // }
 }

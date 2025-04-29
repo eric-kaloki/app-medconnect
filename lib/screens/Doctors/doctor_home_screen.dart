@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:medconnect/screens/Doctors/Appointment/appointment_card.dart';
 import 'package:medconnect/screens/Doctors/Appointment/rescheduled_appointment_card.dart';
+import 'package:medconnect/screens/Doctors/doctor_notifications_page.dart';
 import 'package:medconnect/screens/Patients/Appointment/booking_page.dart';
 import 'package:medconnect/screens/auth/login_screen.dart';
 import 'package:medconnect/utils/config.dart';
@@ -21,6 +22,8 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
   late AnimationController _controller;
   List<Map<String, dynamic>> appointments = [];
   String userFirstName = '';
+  int unreadNotifications = 0; // Counter for unread notifications
+  List<Map<String, dynamic>> notifications = []; // List of notifications
 
   @override
   void initState() {
@@ -30,6 +33,7 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
     _loadUserFirstName();
     _fetchAppointments();
     _fetchPendingAppointments();
+    _fetchNotifications();
   }
 
   Future<void> _loadUserFirstName() async {
@@ -130,6 +134,18 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
     }).toList();
   }
 
+  Future<void> _fetchNotifications() async {
+    // Fetch notifications from the server
+    // Example response:
+    final fetchedNotifications = [
+      {'title': 'Missed Call', 'body': 'You missed a call from Eric.', 'isRead': false},
+      {'title': 'Reminder', 'body': 'Your next appointment is tomorrow.', 'isRead': true},
+    ];
+    setState(() {
+      notifications = fetchedNotifications;
+      unreadNotifications = fetchedNotifications.where((n) => !(n['isRead'] as bool)).length;
+    });
+  }
 
   @override
   void dispose() {
@@ -194,6 +210,7 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
                 arguments: {
                   'doctorId': doctorId,
                   'doctorName': userFirstName,
+                  'bookingType': 'block', // Added bookingType argument
                 },
               ),
             ),
@@ -201,9 +218,63 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
         },
         child: const Icon(Icons.add),
       ),
+ appBar: AppBar(
+        title: Text(userFirstName),
+        actions: [
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DoctorNotificationsPage(notifications: notifications),
+                    ),
+                  ).then((_) => _fetchNotifications()); // Refresh notifications on return
+                },
+              ),
+              if (unreadNotifications > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: CircleAvatar(
+                    radius: 10,
+                    backgroundColor: Colors.red,
+                    child: Text(
+                      '$unreadNotifications',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) async {
+              if (value == 'logout') {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.clear();
+                if (mounted) {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => LoginScreen()),
+                  );
+                }
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'profile', child: Text('Profile Setting')),
+              PopupMenuItem(value: 'logout', child: Text('Logout')),
+            ],
+            child: const CircleAvatar(
+              radius: 30,
+              backgroundImage: NetworkImage('https://i.pravatar.cc/300'),
+            ),
+          ),
+        ],
+      ),
       body: Stack(
         children: [
-          _buildHeader(),
           Padding(
             padding: const EdgeInsets.only(top: 80),
             child: SingleChildScrollView(
@@ -225,48 +296,48 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
     );
   }
 
-  Widget _buildHeader() {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        color: Colors.white,
-        padding: const EdgeInsets.all(15.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              userFirstName,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            PopupMenuButton<String>(
-              onSelected: (value) async {
-                if (value == 'logout') {
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.clear();
-                  if (mounted) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => LoginScreen()),
-                    );
-                  }
-                }
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'profile', child: Text('Profile Setting')),
-                PopupMenuItem(value: 'logout', child: Text('Logout')),
-              ],
-              child: const CircleAvatar(
-                radius: 30,
-                backgroundImage: NetworkImage('https://i.pravatar.cc/300'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // Widget _buildHeader() {
+  //   return Positioned(
+  //     top: 0,
+  //     left: 0,
+  //     right: 0,
+  //     child: Container(
+  //       color: Colors.white,
+  //       padding: const EdgeInsets.all(15.0),
+  //       child: Row(
+  //         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  //         children: [
+  //           Text(
+  //             userFirstName,
+  //             style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+  //           ),
+  //           PopupMenuButton<String>(
+  //             onSelected: (value) async {
+  //               if (value == 'logout') {
+  //                 final prefs = await SharedPreferences.getInstance();
+  //                 await prefs.clear();
+  //                 if (mounted) {
+  //                   Navigator.pushReplacement(
+  //                     context,
+  //                     MaterialPageRoute(builder: (context) => LoginScreen()),
+  //                   );
+  //                 }
+  //               }
+  //             },
+  //             itemBuilder: (context) => const [
+  //               PopupMenuItem(value: 'profile', child: Text('Profile Setting')),
+  //               PopupMenuItem(value: 'logout', child: Text('Logout')),
+  //             ],
+  //             child: const CircleAvatar(
+  //               radius: 30,
+  //               backgroundImage: NetworkImage('https://i.pravatar.cc/300'),
+  //             ),
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
 
   // Horizontal scrollable list for pending appointments
   Widget _buildHorizontalScroll(List<Map<String, dynamic>> appointments) {

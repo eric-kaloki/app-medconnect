@@ -6,6 +6,7 @@ import 'package:medconnect/components/doctor_card.dart' show DoctorCard;
 import 'package:medconnect/providers/dio_provider.dart';
 import 'package:medconnect/screens/Patients/Appointment/choose_doctor_page.dart'
     show ChooseDoctorPage;
+import 'package:medconnect/screens/Patients/patient_notifications_page.dart';
 import 'package:medconnect/screens/auth/login_screen.dart';
 import 'package:medconnect/utils/config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -32,6 +33,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   String userFirstName = '';
   String errorMessage = '';
   List<dynamic> cachedAppointments = [];
+  int unreadNotifications = 0; // Counter for unread notifications
+  List<Map<String, dynamic>> notifications = []; // List of notifications
 
   @override
   void initState() {
@@ -45,6 +48,7 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     });
     fetchDoctors();
     fetchCachedAppointments();
+    _fetchNotifications();
   }
 
   Future<void> fetchCachedAppointments() async {
@@ -62,7 +66,8 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
       // Handle the case where no cached appointments are found
       if (mounted) {
         setState(() {
-          cachedAppointments = []; // Set an empty list if no cached data is found
+          cachedAppointments =
+              []; // Set an empty list if no cached data is found
         });
       }
     }
@@ -85,6 +90,28 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
     }
   }
 
+  Future<void> _fetchNotifications() async {
+    // Fetch notifications from the server
+    // Example response:
+    final fetchedNotifications = [
+      {
+        'title': 'Missed Call',
+        'body': 'You missed a call from Dr. Smith.',
+        'isRead': false
+      },
+      {
+        'title': 'Reminder',
+        'body': 'Your next appointment is tomorrow.',
+        'isRead': true
+      },
+    ];
+    setState(() {
+      notifications = fetchedNotifications;
+      unreadNotifications =
+          fetchedNotifications.where((n) => !(n['isRead'] as bool)).length;
+    });
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -94,6 +121,65 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: Text(userFirstName),
+        actions: [
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PatientNotificationsPage(
+                          notifications: notifications),
+                    ),
+                  ).then((_) =>
+                      _fetchNotifications()); // Refresh notifications on return
+                },
+              ),
+              if (unreadNotifications > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: CircleAvatar(
+                    radius: 10,
+                    backgroundColor: Colors.red,
+                    child: Text(
+                      '$unreadNotifications',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        PopupMenuButton<String>(
+            onSelected: (value) async {
+              if (value == 'profile') {
+                // Navigate to profile settings
+              } else if (value == 'logout') {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.clear(); // Clear all shared preferences
+                await prefs.remove(
+                    'fcmToken'); // Explicitly remove FCM token if needed
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                );
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'profile', child: Text('Profile Setting')),
+              PopupMenuItem(value: 'logout', child: Text('Logout')),
+            ],
+            child: const CircleAvatar(
+              radius: 30,
+              backgroundImage: NetworkImage('https://i.pravatar.cc/300'),
+            ),
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
         child: SafeArea(
@@ -101,42 +187,6 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
             mainAxisAlignment: MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    userFirstName,
-                    style: const TextStyle(
-                        fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  PopupMenuButton<String>(
-                    onSelected: (value) async {
-                      if (value == 'profile') {
-                        // Navigate to profile settings
-                      } else if (value == 'logout') {
-                        SharedPreferences prefs =
-                            await SharedPreferences.getInstance();
-                        await prefs.clear();
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => const LoginScreen()),
-                        );
-                      }
-                    },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(
-                          value: 'profile', child: Text('Profile Setting')),
-                      PopupMenuItem(value: 'logout', child: Text('Logout')),
-                    ],
-                    child: const CircleAvatar(
-                      radius: 30,
-                      backgroundImage:
-                          NetworkImage('https://i.pravatar.cc/300'),
-                    ),
-                  ),
-                ],
-              ),
               Config.spaceSmall,
               const Text(
                 "Categories",
@@ -193,47 +243,55 @@ class _PatientHomeScreenState extends State<PatientHomeScreen>
                 ),
               ),
               Config.spaceSmall,
-             Expanded(
-  child: Builder(
-    builder: (context) {
-      // Filter out past appointments
-      final upcomingAppointments = cachedAppointments.where((appointment) {
-        final appointmentDate = DateTime.parse(appointment['date']);
-        return appointmentDate.isAfter(DateTime.now());
-      }).toList();
-      print(upcomingAppointments);
+              Expanded(
+                child: Builder(
+                  builder: (context) {
+                    // Filter out past appointments
+                    final upcomingAppointments =
+                        cachedAppointments.where((appointment) {
+                      final appointmentDate =
+                          DateTime.parse(appointment['date']);
+                      return appointmentDate.isAfter(DateTime.now());
+                    }).toList();
+                    print(upcomingAppointments);
 
-      // Sort appointments by date in ascending order
-      upcomingAppointments.sort((a, b) {
-        final dateA = DateTime.parse(a['date']);
-        final dateB = DateTime.parse(b['date']);
-        return dateA.compareTo(dateB);
-      });
+                    // Sort appointments by date in ascending order
+                    upcomingAppointments.sort((a, b) {
+                      final dateA = DateTime.parse(a['date']);
+                      final dateB = DateTime.parse(b['date']);
+                      return dateA.compareTo(dateB);
+                    });
 
-      if (upcomingAppointments.isEmpty) {
-        return const Center(child: Text("You don't have any upcoming appointments to show"));
-      }
+                    if (upcomingAppointments.isEmpty) {
+                      return const Center(
+                          child: Text(
+                              "You don't have any upcoming appointments to show"));
+                    }
 
-      // Display the top two upcoming appointments
-      return ListView.builder(
-        itemCount: upcomingAppointments.length > 2 ? 2 : upcomingAppointments.length,
-        itemBuilder: (context, index) {
-          final appointment = upcomingAppointments[index];
-            return AppointmentCard(
-            hasAppointment: true,
-            doctorName: appointment['doctorName'] ?? 'Unknown',
-            category: appointment['category'] ?? 'General',
-            appointmentDateTime: DateTime.parse(appointment['date']),
-            time: appointment['time'] ?? 'Unknown',
-            appointmentId: appointment['id'],
-            doctorId: appointment['doctor_id'], // Pass doctorId to AppointmentDetailsPage
-            );
-        },
-      );
-    },
-  ),
-),
-Config.spaceSmall,
+                    // Display the top two upcoming appointments
+                    return ListView.builder(
+                      itemCount: upcomingAppointments.length > 2
+                          ? 2
+                          : upcomingAppointments.length,
+                      itemBuilder: (context, index) {
+                        final appointment = upcomingAppointments[index];
+                        return AppointmentCard(
+                          hasAppointment: true,
+                          doctorName: appointment['doctorName'] ?? 'Unknown',
+                          category: appointment['category'] ?? 'General',
+                          appointmentDateTime:
+                              DateTime.parse(appointment['date']),
+                          time: appointment['time'] ?? 'Unknown',
+                          appointmentId: appointment['id'],
+                          doctorId: appointment[
+                              'doctor_id'], // Pass doctorId to AppointmentDetailsPage
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              Config.spaceSmall,
               const Text(
                 'Top Doctors',
                 style: TextStyle(

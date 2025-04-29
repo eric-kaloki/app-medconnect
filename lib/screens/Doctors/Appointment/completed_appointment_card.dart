@@ -77,6 +77,7 @@ class CompletedAppointmentCard extends StatelessWidget {
                         context,
                         MaterialPageRoute(
                           builder: (context) => AppointmentDetailsPage(
+                            patientId: '', // Replace with actual ID if available
                             name: patientName,
                             appointmentDate: appointmentDate,
                             appointmentTime: appointmentTime,

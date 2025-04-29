@@ -18,7 +18,7 @@ class AppointmentCard extends StatelessWidget {
   final bool isRescheduled; // New field to indicate rescheduled appointments
 
   const AppointmentCard({
-    Key? key,
+    super.key,
     required this.appointmentId,
     required this.doctorId, // Add doctorId as a required parameter
     required this.time,
@@ -27,7 +27,7 @@ class AppointmentCard extends StatelessWidget {
     required this.appointmentDateTime,
     this.hasAppointment = false,
     this.isRescheduled = false, // Default to false
-  }) : super(key: key);
+  });
 
   Future<void> _confirmReschedule(BuildContext context) async {
     try {
@@ -198,7 +198,9 @@ class AppointmentCard extends StatelessWidget {
                       'doctorName': doctorName, // Pass the doctor's name
                       'preFilledDate': appointmentDateTime, // Pre-fill the date
                       'preFilledTime': time, // Pre-fill the time
-                      'initiator': 'patient', // Indicate that the patient initiated the reschedule
+                      'initiator': 'patient',
+                      'bookingType': 'reschedule', // Indicate that this is a reschedule
+                       // Indicate that the patient initiated the reschedule
                     },
                     );
                   
